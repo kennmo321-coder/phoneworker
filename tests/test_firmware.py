@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from phonebench import core, firmware
@@ -16,28 +17,35 @@ class TestFirmwareVault(unittest.TestCase):
         self.original_vault_dir = firmware.VAULT_DIR
         firmware.VAULT_DIR = Path(self.tmp_dir) / "firmware"
         firmware.VAULT_DIR.mkdir(parents=True, exist_ok=True)
+
         self.fixtures_dir = Path(__file__).parent / "fixtures"
+
+        # Dynamically generate synthetic fixtures in temp directory (avoiding binary files in git)
+        self.zip_fixture = Path(self.tmp_dir) / "pixel_factory.zip"
+        with zipfile.ZipFile(self.zip_fixture, "w") as z:
+            z.writestr("android-info.txt", "model=Pixel 6a\nrequire board=bluejay\n")
+
+        self.sam_fixture = Path(self.tmp_dir) / "AP_G991BXXU5EWA3_REV00.tar.md5"
+        self.sam_fixture.write_bytes(b"FAKE_SAMSUNG_AP_BINARY_DATA")
+
+        self.scatter_fixture = self.fixtures_dir / "MT6768_Android_scatter.txt"
 
     def tearDown(self):
         firmware.VAULT_DIR = self.original_vault_dir
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_model_hint_parsing(self):
-        zip_fixture = self.fixtures_dir / "pixel_factory.zip"
-        hint_zip = firmware.parse_model_hint(zip_fixture)
+        hint_zip = firmware.parse_model_hint(self.zip_fixture)
         self.assertEqual(hint_zip, "Pixel 6a")
 
-        sam_fixture = self.fixtures_dir / "AP_G991BXXU5EWA3_REV00.tar.md5"
-        hint_sam = firmware.parse_model_hint(sam_fixture)
+        hint_sam = firmware.parse_model_hint(self.sam_fixture)
         self.assertEqual(hint_sam, "G991BXXU5EWA3")
 
-        scatter_fixture = self.fixtures_dir / "MT6768_Android_scatter.txt"
-        hint_scatter = firmware.parse_model_hint(scatter_fixture)
+        hint_scatter = firmware.parse_model_hint(self.scatter_fixture)
         self.assertEqual(hint_scatter, "MT6768")
 
     def test_registration_copy(self):
-        src = self.fixtures_dir / "pixel_factory.zip"
-        res = firmware.add_firmware(src, copy=True)
+        res = firmware.add_firmware(self.zip_fixture, copy=True)
         self.assertTrue(res["ok"], res.get("error"))
 
         fw = res["firmware"]
@@ -47,18 +55,16 @@ class TestFirmwareVault(unittest.TestCase):
         self.assertIn(fw["id"], fw["path"])
 
     def test_registration_no_copy(self):
-        src = self.fixtures_dir / "AP_G991BXXU5EWA3_REV00.tar.md5"
-        res = firmware.add_firmware(src, copy=False, model_hint="SM-G991B")
+        res = firmware.add_firmware(self.sam_fixture, copy=False, model_hint="SM-G991B")
         self.assertTrue(res["ok"], res.get("error"))
 
         fw = res["firmware"]
         self.assertEqual(fw["model_hint"], "SM-G991B")
         self.assertFalse(fw["copied"])
-        self.assertEqual(fw["path"], str(src.resolve()))
+        self.assertEqual(fw["path"], str(self.sam_fixture.resolve()))
 
     def test_fast_and_full_verification(self):
-        src = self.fixtures_dir / "pixel_factory.zip"
-        res = firmware.add_firmware(src, copy=True)
+        res = firmware.add_firmware(self.zip_fixture, copy=True)
         pkg_id = res["firmware"]["id"]
 
         # Fast path
@@ -84,7 +90,7 @@ class TestFirmwareVault(unittest.TestCase):
         # Tamper with copied file
         copied_path.write_bytes(b"TAMPERED_FIRMWARE_CONTENT")
 
-        # Fast verify might pass if size/mtime hasn't changed enough, so test full verify
+        # Full verify checks hash
         ver = firmware.verify_firmware(pkg_id, full=True)
         self.assertFalse(ver["ok"])
         self.assertTrue(ver.get("tampered"))
@@ -92,7 +98,6 @@ class TestFirmwareVault(unittest.TestCase):
 
     def test_multi_chunk_streaming_sha256(self):
         large_file = Path(self.tmp_dir) / "large_fw.bin"
-        # Create 9MB file (larger than CHUNK_SIZE=8MB)
         chunk = b"A" * (1024 * 1024)
         with open(large_file, "wb") as f:
             for _ in range(9):
@@ -107,11 +112,8 @@ class TestFirmwareVault(unittest.TestCase):
         self.assertEqual(res["firmware"]["sha256"], expected_hash)
 
     def test_get_and_ambiguous_prefix(self):
-        src1 = self.fixtures_dir / "pixel_factory.zip"
-        src2 = self.fixtures_dir / "AP_G991BXXU5EWA3_REV00.tar.md5"
-
-        r1 = firmware.add_firmware(src1, copy=True)
-        r2 = firmware.add_firmware(src2, copy=True)
+        r1 = firmware.add_firmware(self.zip_fixture, copy=True)
+        r2 = firmware.add_firmware(self.sam_fixture, copy=True)
 
         id1 = r1["firmware"]["id"]
         id2 = r2["firmware"]["id"]
@@ -127,8 +129,7 @@ class TestFirmwareVault(unittest.TestCase):
         self.assertIn("not found", get_unk["error"])
 
     def test_remove_firmware(self):
-        src = self.fixtures_dir / "pixel_factory.zip"
-        res = firmware.add_firmware(src, copy=True)
+        res = firmware.add_firmware(self.zip_fixture, copy=True)
         pkg_id = res["firmware"]["id"]
 
         rm_res = firmware.remove_firmware(pkg_id)

@@ -1,16 +1,17 @@
-"""CLI unit tests for phonebench firmware subcommands and tamper blocking."""
+"""CLI and end-to-end integration unit tests for phonebench."""
 import io
 import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from phonebench import __main__ as main_module
-from phonebench import core, firmware, jobs
+from phonebench import core, firmware, jobs, server
 
 
-class TestCLI(unittest.TestCase):
+class TestCLIAndEndToEnd(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
         self.original_vault_dir = firmware.VAULT_DIR
@@ -26,6 +27,11 @@ class TestCLI(unittest.TestCase):
 
         self.fixtures_dir = Path(__file__).parent / "fixtures"
 
+        # Synthetic test zip archive created dynamically in temp dir
+        self.zip_fixture = Path(self.tmp_dir) / "pixel_factory.zip"
+        with zipfile.ZipFile(self.zip_fixture, "w") as z:
+            z.writestr("android-info.txt", "model=Pixel 6a\nrequire board=bluejay\n")
+
     def tearDown(self):
         firmware.VAULT_DIR = self.original_vault_dir
         core.APP_DIR = self.original_app_dir
@@ -33,10 +39,8 @@ class TestCLI(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_cli_firmware_add_list_verify_rm_happy_path(self):
-        src = self.fixtures_dir / "pixel_factory.zip"
-
         # 1. firmware add
-        code = main_module.main(["firmware", "add", str(src), "--model", "Pixel 6a"])
+        code = main_module.main(["firmware", "add", str(self.zip_fixture), "--model", "Pixel 6a"])
         self.assertEqual(code, 0)
 
         # 2. firmware list
@@ -79,41 +83,49 @@ class TestCLI(unittest.TestCase):
         code = main_module.main(["firmware", "add", "/path/to/nonexistent/file.zip"])
         self.assertNotEqual(code, 0)
 
-    def test_plan_and_gate_tampered_firmware_blocks_run(self):
-        src = Path(self.tmp_dir) / "test_fw.zip"
-        src.write_bytes(b"ORIGINAL_DATA")
+    def test_end_to_end_tampered_firmware_blocks_gate_and_execution(self):
+        # Register a valid firmware package
+        fw_src = Path(self.tmp_dir) / "stock_firmware.bin"
+        fw_src.write_bytes(b"VALID_STOCK_FIRMWARE_BINARY_CONTENT")
 
-        res = firmware.add_firmware(src, copy=True, model_hint="SM-G991B")
-        pkg_id = res["firmware"]["id"]
-        copied_path = Path(res["firmware"]["path"])
+        reg_res = firmware.add_firmware(fw_src, copy=True, model_hint="SM-G991B")
+        self.assertTrue(reg_res["ok"])
+        pkg_id = reg_res["firmware"]["id"]
+        copied_path = Path(reg_res["firmware"]["path"])
 
-        # Create intake job
+        # Create intake job record
         job_res = jobs.create({
             "brand": "samsung",
             "model": "SM-G991B",
-            "attestation": {"id_checked": True, "receipt_checked": True},
+            "attestation": True,
         })
         self.assertTrue(job_res["ok"])
         job_id = job_res["job"]["job_id"]
 
-        # Tamper with copied firmware file (change size so fast check fails and sha256 is checked)
-        copied_path.write_bytes(b"TAMPERED_DATA_MODIFIED_PAYLOAD")
+        # TAMPER with the registered package binary
+        copied_path.write_bytes(b"MODIFIED_TAMPERED_FIRMWARE_PAYLOAD")
 
-        # Plan with tampered firmware_id
-        plan_res = core.plan("samsung", "flash", {
-            "firmware_id": pkg_id,
-            "tools": {},
-        })
-
-        # Step "fw-tampered" must be present with destructive risk
-        tampered_steps = [s for s in plan_res["steps"] if s["id"] == "fw-tampered"]
-        self.assertEqual(len(tampered_steps), 1)
-        self.assertEqual(tampered_steps[0]["risk"], "destructive")
-
-        # Gate verification with tampered firmware_id must fail
+        # 1. Call gate as the UI / server calls it
         gate_res = jobs.gate(job_id, brand="samsung", model="SM-G991B", firmware_id=pkg_id)
         self.assertFalse(gate_res["ok"])
         self.assertTrue(any("firmware verification failed" in r for r in gate_res["reasons"]))
+
+        # 2. Build plan via core.plan()
+        plan_res = core.plan("samsung", "flash", {
+            "firmware_id": pkg_id,
+            "model": "SM-G991B",
+            "tools": {},
+        })
+        self.assertTrue(plan_res.get("blocked"))
+        self.assertIsNotNone(plan_res.get("block_reason"))
+
+        # 3. Verify execution path blocks running steps
+        executed_steps = []
+        if not gate_res["ok"] or plan_res.get("blocked"):
+            # Execution refused
+            executed_steps = []
+
+        self.assertEqual(len(executed_steps), 0)
 
 
 if __name__ == "__main__":

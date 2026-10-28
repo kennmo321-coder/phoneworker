@@ -170,7 +170,7 @@ def gate(job_id: str, brand: str | None = None, model: str | None = None,
 
     if firmware_id:
         from . import firmware
-        v = firmware.verify_firmware(firmware_id)
+        v = firmware.verify_firmware(firmware_id, full=True)
         if not v.get("ok"):
             reasons.append(f"firmware verification failed: {v.get('error')}")
 

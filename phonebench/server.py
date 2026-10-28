@@ -107,13 +107,18 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/plan":
             reg = registry()
             dev = core.scan(reg.get("tools"))
+            fw_id = q.get("firmware_id") or q.get("firmware") or None
+            job_obj = jobs.load(q.get("job", "")) if q.get("job") else None
+            job_model = job_obj.get("model") if job_obj else q.get("model")
             p = core.plan(q.get("brand", "generic"), q.get("intent", "diagnose"), {
                 "tools": core.tool_report(reg.get("tools")),
                 "state": dev["state"],
-                "firmware": q.get("firmware") or None,
+                "firmware_id": fw_id,
+                "firmware": fw_id,
+                "model": job_model,
             })
             if q.get("job"):
-                p["gate"] = jobs.gate(q["job"], q.get("brand"), q.get("model"), dev)
+                p["gate"] = jobs.gate(q["job"], q.get("brand"), job_model, dev, firmware_id=fw_id)
             self._json(p)
             return
 
@@ -148,12 +153,15 @@ class Handler(BaseHTTPRequestHandler):
             job_id = body.get("job", "")
             brand = body.get("brand", "generic")
             intent = body.get("intent", "diagnose")
-            firmware = body.get("firmware") or None
+            firmware_id = body.get("firmware_id") or body.get("firmware") or None
             confirm = body.get("confirm", "")
 
             reg = registry()
             dev = core.scan(reg.get("tools"))
-            g = jobs.gate(job_id, brand, body.get("model"), dev)
+            job_obj = jobs.load(job_id) if job_id else None
+            job_model = job_obj.get("model") if job_obj else body.get("model")
+
+            g = jobs.gate(job_id, brand, job_model, dev, firmware_id=firmware_id)
             if not g["ok"]:
                 self._json({"ok": False, "blocked": "gate", "reasons": g["reasons"]}, 403)
                 return
@@ -165,8 +173,16 @@ class Handler(BaseHTTPRequestHandler):
             p = core.plan(brand, intent, {
                 "tools": core.tool_report(reg.get("tools")),
                 "state": dev["state"],
-                "firmware": firmware,
+                "firmware_id": firmware_id,
+                "firmware": firmware_id,
+                "model": job_model,
             })
+
+            if p.get("blocked"):
+                self._json({"ok": False, "blocked": "firmware",
+                            "reasons": [p.get("block_reason") or "Firmware verification failed"]}, 403)
+                return
+
             results = []
             for step in p["steps"]:
                 if step["kind"] == "auto":

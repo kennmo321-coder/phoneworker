@@ -475,6 +475,9 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
     fb = tools.get("fastboot", {}).get("path")
     steps: list[dict] = []
 
+    blocked = False
+    block_reason = None
+
     if intent == "diagnose":
         if adb:
             for k in ("ro.product.manufacturer", "ro.product.model", "ro.product.device",
@@ -510,12 +513,14 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
         if fw_ref:
             fw_res = firmware.get_firmware(str(fw_ref))
             if fw_res.get("ok"):
-                fw_ver = firmware.verify_firmware(fw_res["firmware"]["id"])
+                fw_ver = firmware.verify_firmware(fw_res["firmware"]["id"], full=True)
                 if fw_ver.get("ok"):
                     pkg = fw_ver["firmware"]
                     steps.append(_step("fw-vault", f"Firmware Vault: {pkg['id']} ({pkg['model_hint']})",
                                        f"Verified SHA-256: {pkg['sha256'][:12]}... Path: {pkg['path']}", "guide", "safe"))
                 else:
+                    blocked = True
+                    block_reason = fw_ver.get("error") or "Firmware verification failed"
                     steps.append(_step("fw-tampered", f"Firmware BLOCKED: {fw_ver.get('error')}",
                                        "Execution BLOCKED: firmware file modified or tampered since registration.",
                                        "guide", "destructive"))
@@ -524,15 +529,18 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
                                    "Warning: specified firmware is not registered in Vault.", "guide", "caution"))
         else:
             fw_list = firmware.list_firmware()
-            if fw_list.get("ok") and fw_list.get("packages"):
+            target_model = (ctx.get("model") or "").strip().lower()
+            if fw_list.get("ok") and fw_list.get("packages") and target_model:
                 for pkg in fw_list["packages"]:
-                    m_hint = (pkg.get("model_hint") or "").lower()
-                    if brand in m_hint or m_hint in brand:
-                        fw_ver = firmware.verify_firmware(pkg["id"])
+                    m_hint = (pkg.get("model_hint") or "").strip().lower()
+                    if m_hint and (m_hint in target_model or target_model in m_hint):
+                        fw_ver = firmware.verify_firmware(pkg["id"], full=True)
                         if fw_ver.get("ok"):
                             steps.append(_step("fw-vault", f"Vault Firmware: {pkg['id']} ({pkg['model_hint']})",
                                                f"Verified SHA-256: {pkg['sha256'][:12]}...", "guide", "safe"))
                         else:
+                            blocked = True
+                            block_reason = fw_ver.get("error") or "Firmware verification failed"
                             steps.append(_step("fw-tampered", f"Firmware BLOCKED: {fw_ver.get('error')}",
                                                "Execution BLOCKED: firmware file modified or tampered since registration.",
                                                "guide", "destructive"))
@@ -682,4 +690,6 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
         "firmware_hint": BRANDS[brand]["firmware_hint"],
         "sources": BRANDS[brand]["sources"],
         "state": state,
+        "blocked": blocked,
+        "block_reason": block_reason,
     }

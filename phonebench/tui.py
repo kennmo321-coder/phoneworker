@@ -194,6 +194,7 @@ class App:
         self.intent_idx = 0
         self.intents = list(core.INTENTS.items())
         self.brand_idx = 0
+        self.selected_firmware_id = None
         self.plan = None
         self.jobs_cache = []
         self.ledger_cache = []
@@ -559,25 +560,39 @@ class App:
     def action_plan(self):
         brand = BRAND_ORDER[self.brand_idx]
         intent = self.intents[self.intent_idx][0]
+        job_model = (self.job or {}).get("model")
         self.plan = core.plan(brand, intent, {
             "tools": self.tools,
             "state": self.device.get("state"),
+            "firmware_id": self.selected_firmware_id,
+            "model": job_model,
         })
         if self.current_job_id():
-            self.plan["gate"] = jobs.gate(self.current_job_id(), brand, None, self.device)
+            self.plan["gate"] = jobs.gate(
+                self.current_job_id(), brand, job_model, self.device, firmware_id=self.selected_firmware_id
+            )
         else:
             self.plan["gate"] = None
-        self.say(f"plan: {len(self.plan['steps'])} steps, risk {self.plan['risk']}",
-                 "warn" if self.plan["risk"] != "safe" else "ok")
+        if self.plan.get("blocked"):
+            self.say(f"plan blocked: {self.plan.get('block_reason')}", "bad")
+        else:
+            self.say(f"plan: {len(self.plan['steps'])} steps, risk {self.plan['risk']}",
+                     "warn" if self.plan["risk"] != "safe" else "ok")
 
     def action_run(self):
         if not self.plan:
             self.say("build a plan first (enter)", "warn")
             return
+        if self.plan.get("blocked"):
+            self.say(f"blocked: {self.plan.get('block_reason')}", "bad")
+            return
         if not self.current_job_id():
             self.say("select a job first", "bad")
             return
-        gate = jobs.gate(self.current_job_id(), BRAND_ORDER[self.brand_idx], None, self.device)
+        job_model = (self.job or {}).get("model")
+        gate = jobs.gate(
+            self.current_job_id(), BRAND_ORDER[self.brand_idx], job_model, self.device, firmware_id=self.selected_firmware_id
+        )
         if not gate["ok"]:
             self.say("gate blocked: " + "; ".join(gate["reasons"])[:60], "bad")
             return
@@ -585,6 +600,9 @@ class App:
         self.modal_buf = ""
 
     def execute(self):
+        if self.plan and self.plan.get("blocked"):
+            self.say(f"blocked: {self.plan.get('block_reason')}", "bad")
+            return
         results = []
         for s in self.plan["steps"]:
             if s["kind"] == "auto" and s["cmd"]:
