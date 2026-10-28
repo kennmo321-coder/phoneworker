@@ -1,0 +1,37 @@
+# archives and binaries stay out of the repo
+*.rar
+*.zip
+*.7z
+*.exe
+*.msi
+*.iso
+*.dmg
+*.bin
+*.img
+*.tar.md5
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# runtime data (lives in %LOCALAPPDATA%\phonebench, never in the tree)
+jobs/
+backups/
+ledger.jsonl
+tool_index.json
+registry.json
+platform-tools/
+
+# editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# secrets
+*.token
+.env

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>phonebench</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#161b22; --panel2:#1c232c; --line:#2a3340;
+    --txt:#d7dee8; --dim:#8b98a8; --accent:#f0a02a; --ok:#3fb950; --bad:#f85149;
+    --warn:#d29922; --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
+  header{display:flex;align-items:center;gap:14px;padding:14px 22px;
+         border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+  header h1{font-size:15px;margin:0;letter-spacing:.5px;font-weight:600}
+  header h1 span{color:var(--accent)}
+  .pill{font:11px/1 var(--mono);padding:6px 10px;border-radius:999px;
+        border:1px solid var(--line);background:var(--panel2);color:var(--dim)}
+  .pill.live{color:var(--ok);border-color:#1f4d2b}
+  .pill.dead{color:var(--bad);border-color:#4d1f1f}
+  nav{display:flex;gap:2px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+  nav button{background:none;border:0;color:var(--dim);padding:11px 16px;cursor:pointer;
+             font-size:13px;border-bottom:2px solid transparent}
+  nav button:hover{color:var(--txt)}
+  nav button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  main{padding:22px;max-width:1180px;margin:0 auto}
+  section{display:none}
+  section.on{display:block}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card h2{margin:0 0 12px;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);font-weight:600}
+  label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);
+        color:var(--txt);border-radius:7px;padding:9px 11px;font:13px var(--mono);outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{min-height:64px;resize:vertical}
+  button.act{background:var(--accent);color:#171100;border:0;border-radius:8px;
+        padding:10px 18px;font-weight:600;cursor:pointer;font-size:13px}
+  button.act:hover{filter:brightness(1.1)}
+  button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+        border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px}
+  button.ghost:hover{border-color:var(--accent)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #1f2833;font-size:13px}
+  .kv:last-child{border:0}
+  .kv b{font-weight:500;color:var(--dim);font-size:12px;letter-spacing:.3px}
+  .kv span{font-family:var(--mono);text-align:right;word-break:break-all}
+  .t{font-family:var(--mono);font-size:12px}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)} .dim{color:var(--dim)}
+  .step{border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:9px 0;background:var(--panel2)}
+  .step .h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+  .step .n{font-weight:600;font-size:13px}
+  .step .d{color:var(--dim);font-size:12px;margin-top:4px}
+  .tag{font:10px/1 var(--mono);padding:4px 7px;border-radius:4px;letter-spacing:.6px;text-transform:uppercase}
+  .tag.safe{background:#14261a;color:var(--ok)}
+  .tag.caution{background:#2a2210;color:var(--warn)}
+  .tag.destructive{background:#2a1414;color:var(--bad)}
+  .rules{margin:0;padding-left:18px;color:var(--dim);font-size:12.5px}
+  .rules li{margin:5px 0}
+  pre{background:#0b0e12;border:1px solid var(--line);border-radius:8px;padding:12px;
+      overflow:auto;font:12px/1.5 var(--mono);max-height:340px;white-space:pre-wrap;word-break:break-word}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--dim);font-weight:500;font-size:11px;letter-spacing:.8px;
+     text-transform:uppercase;padding:8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid #1c242e;font-family:var(--mono);font-size:12px}
+  tr:hover td{background:#171e27}
+  .banner{border-left:3px solid var(--bad);background:#1d1416;padding:11px 14px;
+          border-radius:0 8px 8px 0;margin:12px 0;font-size:13px}
+  .banner.good{border-color:var(--ok);background:#121c15}
+  .banner.warn{border-color:var(--warn);background:#1c1a12}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--panel2);border:1px solid var(--line);
+         border-radius:9px;padding:12px 16px;font-size:13px;box-shadow:0 8px 30px #0008;
+         opacity:0;transform:translateY(8px);transition:.18s;pointer-events:none;max-width:420px}
+  .toast.on{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>phone<span>bench</span></h1>
+  <span class="pill" id="devPill">scanning…</span>
+  <span class="pill" id="toolPill">tools</span>
+  <span style="flex:1"></span>
+  <span class="pill" id="jobPill">no job</span>
+</header>
+
+<nav>
+  <button class="on" data-tab="bench">Bench</button>
+  <button data-tab="intake">Intake</button>
+  <button data-tab="plan">Workflow</button>
+  <button data-tab="ledger">Ledger</button>
+</nav>
+
+<main>
+  <!-- BENCH -->
+  <section id="bench" class="on">
+    <div class="grid">
+      <div class="card">
+        <h2>Connected device</h2>
+        <div id="devBox"><div class="dim">scanning…</div></div>
+        <div class="row">
+          <button class="ghost" onclick="scan()">Rescan</button>
+          <button class="ghost" onclick="bootstrapTools()">Install platform-tools</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Toolchain</h2>
+        <div id="toolBox"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Open-source bench</h2>
+      <div id="resBox"><div class="dim">loading…</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Bench notes</h2>
+      <ul class="rules">
+        <li>Ownership gate: ID + receipt + IMEI + signed declaration before anything destructive.</li>
+        <li>Read-only diagnosis runs automatically. Writes never run silently.</li>
+        <li>Every intake and operation is written to the ledger.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- INTAKE -->
+  <section id="intake">
+    <div class="card">
+      <h2>Client intake — ownership gate</h2>
+      <div class="grid">
+        <div>
+          <label>Client full name</label><input id="f_name" placeholder="Name as on ID">
+          <label>ID type</label>
+          <select id="f_idtype">
+            <option>National ID</option><option>Passport</option><option>Driver licence</option>
+            <option>Residence permit</option>
+          </select>
+          <label>ID number</label><input id="f_idnum" placeholder="...">
+          <label>Receipt / invoice number</label><input id="f_receipt" placeholder="RC-2026-001">
+          <label>Receipt date</label><input id="f_rdate" type="date">
+        </div>
+        <div>
+          <label>IMEI (15 digits)</label><input id="f_imei" placeholder="352099001761481" maxlength="19">
+          <label>Brand</label>
+          <select id="f_brand">
+            <option value="samsung">Samsung</option><option value="google">Google Pixel</option>
+            <option value="xiaomi">Xiaomi / Redmi / POCO</option><option value="apple">Apple iPhone / iPad</option>
+            <option value="mediatek">MediaTek</option><option value="qualcomm">Qualcomm EDL</option>
+            <option value="generic">Other Android</option>
+          </select>
+          <label>Model</label><input id="f_model" placeholder="SM-G991B">
+          <label>ID copy path (optional)</label><input id="f_idcopy" placeholder="D:\intake\id.jpg">
+          <label>Receipt photo path (optional)</label><input id="f_rcphoto" placeholder="D:\intake\receipt.jpg">
+        </div>
+      </div>
+      <label>Notes</label><textarea id="f_notes" placeholder="Fault reported, accessories, serial…"></textarea>
+      <div class="row">
+        <button class="act" onclick="intake()">Create job</button>
+        <span class="dim t" id="intakeMsg"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLAN -->
+  <section id="plan">
+    <div class="card">
+      <h2>Workflow</h2>
+      <div class="grid">
+        <div>
+          <label>Job</label><select id="p_job"></select>
+          <label>Brand</label>
+          <select id="p_brand">
+            <option value="samsung">Samsung</option><option value="google">Google Pixel</option>
+            <option value="xiaomi">Xiaomi / Redmi / POCO</option><option value="apple">Apple iPhone / iPad</option>
+            <option value="mediatek">MediaTek</option><option value="qualcomm">Qualcomm EDL</option>
+            <option value="generic">Other Android</option>
+          </select>
+        </div>
+        <div>
+          <label>Intent</label><select id="p_intent"></select>
+          <label>Firmware path (optional)</label><input id="p_fw" placeholder="C:\fw\AP_G991B.tar.md5">
+        </div>
+      </div>
+      <div class="row">
+        <button class="act" onclick="buildPlan()">Build plan</button>
+        <button class="ghost" id="runBtn" onclick="runPlan()" disabled>Run</button>
+      </div>
+      <div id="planOut" style="margin-top:18px"></div>
+    </div>
+  </section>
+
+  <!-- LEDGER -->
+  <section id="ledger">
+    <div class="card">
+      <h2>Jobs</h2>
+      <div id="jobsBox"><div class="dim">loading…</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Ledger</h2>
+      <div id="ledgerBox"></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let STATE = null, PLAN = null, CURRENT_JOB = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(msg, ms=3200){
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("on"), ms);
+}
+
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok && !j.blocked) throw new Error(j.error || j.reasons?.join("; ") || r.statusText);
+  return j;
+}
+
+document.querySelectorAll("nav button").forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));
+    document.querySelectorAll("section").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); $(b.dataset.tab).classList.add("on");
+    if(b.dataset.tab==="ledger") loadLedger();
+    if(b.dataset.tab==="plan") loadJobs();
+  };
+});
+
+async function scan(){
+  try{
+    const s = await api("/api/state");
+    STATE = s; renderState(s);
+  }catch(e){ toast("scan failed: "+e.message); }
+}
+
+function renderState(s){
+  const d = s.device, t = s.tools;
+  const known = Object.entries(t).filter(([,v])=>v.found).length;
+  const dp = $("devPill");
+  dp.textContent = d.state === "none" ? "no device" : d.state.toUpperCase();
+  dp.className = "pill " + (d.state === "none" ? "dead" : "live");
+  $("toolPill").textContent = known + " tools";
+  $("toolPill").className = "pill " + (known ? "live" : "dead");
+
+  const box = $("devBox");
+  if(d.state === "none"){
+    box.innerHTML = `<div class="banner warn">Nothing enumerating. Check cable (data, not charge-only),
+      the port, and the phone's USB mode.</div>`;
+  } else {
+    const p = d.props || {};
+    const rows = [
+      ["State", d.state],
+      ["Brand guess", d.brand_guess || "—"],
+      ["Model", p["ro.product.model"] || "—"],
+      ["Manufacturer", p["ro.product.manufacturer"] || "—"],
+      ["Android", p["ro.build.version.release"] || "—"],
+      ["SDK", p["ro.build.version.sdk"] || "—"],
+      ["Serial", p["ro.serialno"] || "—"],
+      ["Battery", p.battery ? p.battery + "%" : "—"],
+    ];
+    box.innerHTML = rows.map(([k,v])=>`<div class="kv"><b>${k}</b><span>${esc(v)}</span></div>`).join("");
+  }
+
+  const tb = $("toolBox");
+  tb.innerHTML = Object.entries(t).map(([name,v])=>{
+    const cls = v.found ? "ok" : "dim";
+    const label = v.found ? "ready" : (v.bundle ? "install" : "missing");
+    return `<div class="kv"><b class="${cls}">${name}</b><span class="t ${cls}">${label}</span></div>`;
+  }).join("");
+
+  const sel = $("p_intent");
+  if(sel && !sel.options.length){
+    sel.innerHTML = Object.entries(s.intents).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+  }
+
+  const rb = $("resBox");
+  if(rb && s.resources){
+    rb.innerHTML = s.resources.map(r=>`
+      <div class="kv"><b>${esc(r.name)} <span class="dim" style="font-weight:400">${esc(r.brand)}</span></b>
+      <span><a href="${esc(r.url)}" target="_blank" rel="noreferrer"
+        style="color:var(--accent);text-decoration:none">${esc(r.note)}</a></span></div>`).join("");
+  }
+}
+
+async function bootstrapTools(){
+  toast("downloading platform-tools from Google…", 8000);
+  try{
+    const r = await api("/api/bootstrap", {method:"POST", body:"{}"});
+    if(r.ok){ toast("platform-tools ready: " + r.path); scan(); }
+    else toast("failed: " + (r.error||"unknown"));
+  }catch(e){ toast("failed: "+e.message); }
+}
+
+async function intake(){
+  const body = {
+    client_name:$("f_name").value.trim(), id_type:$("f_idtype").value,
+    id_number:$("f_idnum").value.trim(), receipt:$("f_receipt").value.trim(),
+    receipt_date:$("f_rdate").value, imei:$("f_imei").value.trim(),
+    brand:$("f_brand").value, model:$("f_model").value.trim(),
+    id_copy:$("f_idcopy").value.trim(), receipt_photo:$("f_rcphoto").value.trim(),
+    notes:$("f_notes").value.trim()
+  };
+  try{
+    const r = await api("/api/intake", {method:"POST", body:JSON.stringify(body)});
+    if(!r.ok){ $("intakeMsg").innerHTML = `<span class="bad">${esc(r.error)}</span>`; return; }
+    CURRENT_JOB = r.job.job_id;
+    $("jobPill").textContent = r.job.job_id;
+    $("jobPill").className = "pill live";
+    $("intakeMsg").innerHTML = `<span class="ok">job ${esc(r.job.job_id)} created</span>` +
+      (r.warnings?.length ? ` <span class="warn">(${esc(r.warnings.join("; "))})</span>` : "");
+    toast("job created: " + r.job.job_id);
+    loadJobs();
+  }catch(e){ $("intakeMsg").innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+}
+
+async function loadJobs(){
+  const r = await api("/api/jobs");
+  const sel = $("p_job");
+  sel.innerHTML = `<option value="">— none —</option>` +
+    r.jobs.map(j=>`<option value="${esc(j.job_id)}">${esc(j.job_id)} · ${esc(j.client_name)} · ${esc(j.model)}</option>`).join("");
+  if(CURRENT_JOB) sel.value = CURRENT_JOB;
+}
+
+async function buildPlan(){
+  const brand = $("p_brand").value, intent = $("p_intent").value, fw = $("p_fw").value.trim();
+  const job = $("p_job").value;
+  try{
+    const p = await api(`/api/plan?brand=${encodeURIComponent(brand)}&intent=${encodeURIComponent(intent)}&firmware=${encodeURIComponent(fw)}&job=${encodeURIComponent(job)}`);
+    PLAN = p; renderPlan(p);
+    $("runBtn").disabled = false;
+  }catch(e){ toast("plan failed: "+e.message); }
+}
+
+function renderPlan(p){
+  const gate = p.gate;
+  let html = `<div class="row" style="margin:0 0 14px">
+      <span class="tag ${p.risk}">${p.risk}</span>
+      <span class="dim t">${esc(p.brand_label)} · ${esc(p.intent_label)} · device ${esc(p.state)}</span>
+    </div>`;
+  if(gate && !gate.ok){
+    html += `<div class="banner"><b>Gate blocked.</b> ${esc(gate.reasons.join("; "))}</div>`;
+  } else if(!gate){
+    html += `<div class="banner warn">No job selected — Run stays disabled.</div>`;
+  }
+  html += `<div class="dim t" style="margin-bottom:10px">${esc(p.firmware_hint)}</div>`;
+  html += p.steps.map((s,i)=>`
+    <div class="step">
+      <div class="h"><span class="n">${i+1}. ${esc(s.title)}</span>
+        <span class="tag ${s.risk}">${s.risk}</span></div>
+      ${s.detail ? `<div class="d">${esc(s.detail)}</div>`:""}
+      ${s.cmd?.length ? `<div class="d t" style="color:#6f7d8f">${esc(s.cmd.join(" "))}</div>`:""}
+    </div>`).join("");
+  html += `<div style="margin-top:16px"><div class="dim" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Safety rules</div>
+    <ul class="rules">${p.rules.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></div>`;
+  $("planOut").innerHTML = html;
+}
+
+async function runPlan(){
+  const job = $("p_job").value;
+  if(!job){ toast("select a job first"); return; }
+  const token = prompt("This will execute the plan. Type RUN to confirm:");
+  if(token !== "RUN"){ toast("cancelled"); return; }
+  try{
+    const r = await api("/api/run", {method:"POST", body:JSON.stringify({
+      job, brand:$("p_brand").value, intent:$("p_intent").value,
+      firmware:$("p_fw").value.trim(), confirm:token
+    })});
+    if(r.blocked){ toast("blocked: " + r.reasons.join("; "), 6000); return; }
+    const log = r.results.map(x=>{
+      if(x.guide) return `[guide] ${x.id}: ${x.guide}`;
+      if(x.launched) return `[launch] ${x.id}: ${x.launched}`;
+      return `[${x.ok?"ok":"fail"}] ${x.id}${x.err?" — "+x.err:""}\n${(x.out||"").slice(0,400)}`;
+    }).join("\n\n");
+    $("planOut").insertAdjacentHTML("beforeend",
+      `<div class="card" style="margin-top:16px"><h2>Run log</h2><pre>${esc(log)}</pre></div>`);
+    toast("run complete");
+    loadLedger();
+  }catch(e){ toast("run failed: "+e.message, 5000); }
+}
+
+async function loadLedger(){
+  const j = await api("/api/jobs");
+  $("jobsBox").innerHTML = j.jobs.length ? `<table><tr><th>Job</th><th>Client</th><th>Model</th><th>IMEI</th><th>Status</th><th>Ops</th></tr>` +
+    j.jobs.map(x=>`<tr><td>${esc(x.job_id)}</td><td>${esc(x.client_name)}</td><td>${esc(x.model)}</td><td>${esc(x.imei)}</td><td>${esc(x.status)}</td><td>${x.operations}</td></tr>`).join("") +
+    `</table>` : `<div class="dim">no jobs yet</div>`;
+  const l = await api("/api/ledger");
+  $("ledgerBox").innerHTML = l.ledger.length ? `<pre>${esc(l.ledger.slice(0,120).map(e=>`${e.ts}  ${e.kind.padEnd(9)}  ${e.job||""}  ${e.summary||e.client||""}`).join("\n"))}</pre>` : `<div class="dim">empty</div>`;
+}
+
+scan();
+setInterval(()=>{ if($("bench").classList.contains("on")) scan(); }, 15000);
+</script>
+</body>
+</html>
