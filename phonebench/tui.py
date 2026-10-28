@@ -160,16 +160,13 @@ def read_key() -> str:
 # ---------------------------------------------------------------- form model
 
 FIELDS = [
-    ("client_name", "Client name"),
-    ("id_type", "ID type"),
-    ("id_number", "ID number"),
-    ("receipt", "Receipt no."),
-    ("imei", "IMEI (15)"),
     ("brand", "Brand"),
     ("model", "Model"),
-    ("receipt_photo", "Receipt photo"),
-    ("notes", "Notes"),
+    ("serial", "Serial"),
+    ("fault", "Fault"),
+    ("note", "Note"),
 ]
+ATTEST_ROW = len(FIELDS)
 
 BRAND_ORDER = ["samsung", "google", "xiaomi", "apple", "mediatek", "qualcomm", "generic"]
 
@@ -189,8 +186,8 @@ class App:
         self.resources = core.RESOURCES
 
         self.form = {k: "" for k, _ in FIELDS}
-        self.form["id_type"] = "National ID"
         self.form["brand"] = "samsung"
+        self.attested = False
         self.field = 0
         self.job = None
 
@@ -339,28 +336,40 @@ class App:
                 yy += 1
 
     def draw_intake(self, c: Canvas, x: int, y: int, w: int, h: int):
-        c.box(x, y, w, h, "intake - ownership gate")
-        c.put(x + 2, y + 1, "All fields required except paths. Enter moves on; last field creates the job.", "dim")
+        c.box(x, y, w, h, "intake - device only, no client data")
+        c.put(x + 2, y + 1,
+              "Check the ID and receipt yourself. Only the fact that you did is recorded."[: w - 4],
+              "dim")
         yy = y + 3
         for i, (key, label) in enumerate(FIELDS):
             sel = i == self.field
-            st = "accent" if sel else ""
+            st = "inv" if sel else ""
             if sel:
                 c.fill(x + 1, yy, w - 2, 1, "inv")
-                st = "inv"
-            c.put(x + 3, yy, ("› " if sel else "  ") + f"{label:<16}", st)
+            c.put(x + 3, yy, ("› " if sel else "  ") + f"{label:<12}", st or "")
             val = self.form.get(key, "")
             shown = val if len(val) < w - 24 else val[: w - 27] + "..."
-            c.put(x + 22, yy, shown, st or "bold")
+            c.put(x + 18, yy, shown, st or "bold")
             if sel:
-                c.put(x + 22 + len(shown), yy, "▏", "accent")
+                c.put(x + 18 + len(shown), yy, "▏", "accent")
             yy += 1
+
         yy += 1
-        c.put(x + 3, yy, "IMEI must be 15 digits. Brand and model are checked against the device.", "dim")
+        sel = self.field == ATTEST_ROW
+        st = "inv" if sel else ""
+        if sel:
+            c.fill(x + 1, yy, w - 2, 3, "inv")
+        mark = "[x]" if self.attested else "[ ]"
+        c.put(x + 3, yy, f"{'› ' if sel else '  '}{mark} ownership verified", st or "")
+        c.put(x + 3, yy + 1, "      ID + proof of purchase seen in person", st or "dim")
+        c.put(x + 3, yy + 2, "      space toggles · nothing is copied or stored", st or "dim")
+
         if self.job:
-            yy += 2
-            c.put(x + 3, yy, f"job created: {self.job['job_id']}", "ok")
-            c.put(x + 3, yy + 1, f"{self.job['client_name']} - {self.job['brand']} {self.job['model']}", "dim")
+            yy += 4
+            c.put(x + 3, yy, f"job {self.job['job_id']} open", "ok")
+            c.put(x + 3, yy + 1,
+                  f"{self.job['brand']} {self.job['model']}"
+                  + (f"  serial {self.job['serial']}" if self.job.get("serial") else ""), "dim")
             c.put(x + 3, yy + 2, "tab → Workflow to build the plan", "dim")
 
     def draw_workflow(self, c: Canvas, x: int, y: int, w: int, h: int):
@@ -424,11 +433,12 @@ class App:
         if not self.jobs_cache:
             c.put(x + 2, y + 1, "no jobs yet - go to Intake", "dim")
         else:
-            c.put(x + 2, y + 1, f"{'job':<22}{'client':<18}{'model':<16}{'status':<10}", "dim")
+            c.put(x + 2, y + 1, f"{'job':<16}{'model':<18}{'serial':<16}{'fault':<16}{'status':<8}", "dim")
             for i, j in enumerate(self.jobs_cache[: top_h - 3]):
                 c.put(x + 2, y + 2 + i,
-                      f"{j['job_id']:<22}{(j['client_name'] or '')[:16]:<18}"
-                      f"{(j['model'] or '')[:14]:<16}{j['status'] or '':<10}")
+                      f"{j['job_id']:<16}{(j['model'] or '')[:16]:<18}"
+                      f"{(j['serial'] or '')[:14]:<16}{(j['fault'] or '')[:14]:<16}"
+                      f"{j['status'] or '':<8}")
         ly = y + top_h
         lh = h - top_h
         c.box(x, ly, w, lh, "ledger")
@@ -452,8 +462,9 @@ class App:
             ("  q / esc        quit / close dialog", ""),
             ("", ""),
             ("the gate", "accent"),
-            ("  Run needs a job with: name, ID type + number, receipt,", ""),
-            ("  15-digit IMEI, brand, model, and a signed declaration.", ""),
+            ("  Run needs a device job plus your attestation that you saw", ""),
+            ("  a government ID and a proof of purchase, in person.", ""),
+            ("  No names, no numbers, no scans are stored on this machine.", ""),
             ("  Brand and model are checked against the attached device.", ""),
             ("  Type RUN to confirm. Read-only diagnosis runs freely.", ""),
             ("", ""),
@@ -482,8 +493,13 @@ class App:
 
     # ------------------------------------------------------------ actions
     def action_intake(self):
+        if not self.attested:
+            self.say("check the ID and receipt in person, then press space to attest", "bad")
+            return
+        fields = dict(self.form)
+        fields["attestation"] = {"id_checked": True, "receipt_checked": True}
         try:
-            res = jobs.create(self.form)
+            res = jobs.create(fields)
         except Exception as exc:
             self.say(f"intake failed: {exc}", "bad")
             return
@@ -491,7 +507,7 @@ class App:
             self.say(res.get("error", "intake failed"), "bad")
             return
         self.job = res["job"]
-        self.say(f"job {self.job['job_id']} created", "ok")
+        self.say(f"job {self.job['job_id']} open - no personal data stored", "ok")
         self.load_ledger()
 
     def action_plan(self):
@@ -592,19 +608,22 @@ class App:
                          "ok" if r.get("ok") else "bad")
 
         elif self.screen == 1:
+            nrows = len(FIELDS) + 1
             if key == "down":
-                self.field = (self.field + 1) % len(FIELDS)
+                self.field = (self.field + 1) % nrows
             elif key == "up":
-                self.field = (self.field - 1) % len(FIELDS)
-            elif key == "backspace":
+                self.field = (self.field - 1) % nrows
+            elif key == " " and self.field == ATTEST_ROW:
+                self.attested = not self.attested
+            elif key == "backspace" and self.field < ATTEST_ROW:
                 k = FIELDS[self.field][0]
                 self.form[k] = self.form[k][:-1]
             elif key == "enter":
-                if self.field == len(FIELDS) - 1:
+                if self.field >= ATTEST_ROW:
                     self.action_intake()
                 else:
                     self.field += 1
-            elif len(key) == 1 and key.isprintable():
+            elif len(key) == 1 and key.isprintable() and self.field < ATTEST_ROW:
                 k = FIELDS[self.field][0]
                 self.form[k] += key
 

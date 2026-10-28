@@ -16,7 +16,7 @@ python -m phonebench --doctor   # toolchain + device state, then exit
 | Screen | What it does |
 |---|---|
 | **Bench** | Live device state — `adb` / `fastboot` / EDL / preloader — model, Android version, battery, serial. Toolchain status for 16 tools. `i` installs Google's official platform-tools. Resource directory for the open-source stack |
-| **Intake** | Ownership gate: client name, ID type + number, receipt, 15-digit IMEI, brand, model, signed declaration. Writes `jobs/<id>.json` |
+| **Intake** | Device record: brand, model, serial, fault, note. Ownership is **attested, not stored** — you check the identity document and the proof of purchase in person; the app records only that you did, when, and by whom |
 | **Workflow** | 8 intents × 7 brands. Every step tagged `safe` / `caution` / `destructive`, with the rules that matter for that brand |
 | **Ledger** | Every job and every operation, append-only, timestamped |
 | **Help** | Keys, gate rules, per-brand safety |
@@ -36,12 +36,21 @@ i         install platform-tools  q  quit
 
 Execution requires all of:
 
-1. A job with name, ID type + number, receipt, IMEI (15 digits), brand, model.
-2. `ownership_declared = true`, set at intake.
+1. A device job with brand and model.
+2. Your attestation that you checked a government ID and a proof of purchase, in person.
 3. Brand and model matching the request — and the attached device, when adb can read it.
 4. Typing `RUN` in the confirmation dialog.
 
 Read-only diagnosis runs freely. Nothing that writes executes silently.
+
+## Privacy
+
+The bench stores **no client data**: no names, no ID numbers, no receipt
+numbers, no scans, no addresses. A job is a device record. The attestation is a
+boolean plus a timestamp — enough to show due diligence, worthless to a thief.
+
+Runtime data lives in `%LOCALAPPDATA%\phonebench\` and holds device models,
+serials, faults and operation logs. Keep it that way.
 
 ## Layout
 

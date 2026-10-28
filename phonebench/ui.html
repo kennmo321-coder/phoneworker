@@ -129,21 +129,13 @@
   <!-- INTAKE -->
   <section id="intake">
     <div class="card">
-      <h2>Client intake — ownership gate</h2>
+      <h2>Device intake — no client data stored</h2>
+      <div class="dim" style="font-size:12.5px;margin-bottom:8px">
+        Check the ID and the proof of purchase yourself. The app records only that you did — no
+        names, numbers, or scans.
+      </div>
       <div class="grid">
         <div>
-          <label>Client full name</label><input id="f_name" placeholder="Name as on ID">
-          <label>ID type</label>
-          <select id="f_idtype">
-            <option>National ID</option><option>Passport</option><option>Driver licence</option>
-            <option>Residence permit</option>
-          </select>
-          <label>ID number</label><input id="f_idnum" placeholder="...">
-          <label>Receipt / invoice number</label><input id="f_receipt" placeholder="RC-2026-001">
-          <label>Receipt date</label><input id="f_rdate" type="date">
-        </div>
-        <div>
-          <label>IMEI (15 digits)</label><input id="f_imei" placeholder="352099001761481" maxlength="19">
           <label>Brand</label>
           <select id="f_brand">
             <option value="samsung">Samsung</option><option value="google">Google Pixel</option>
@@ -152,13 +144,19 @@
             <option value="generic">Other Android</option>
           </select>
           <label>Model</label><input id="f_model" placeholder="SM-G991B">
-          <label>ID copy path (optional)</label><input id="f_idcopy" placeholder="D:\intake\id.jpg">
-          <label>Receipt photo path (optional)</label><input id="f_rcphoto" placeholder="D:\intake\receipt.jpg">
+          <label>Serial (optional)</label><input id="f_serial" placeholder="R58N12345AB">
+        </div>
+        <div>
+          <label>Fault</label><input id="f_fault" placeholder="no boot / cracked screen / FRP">
+          <label>Note</label><textarea id="f_note" placeholder="Anything the bench needs to know"></textarea>
         </div>
       </div>
-      <label>Notes</label><textarea id="f_notes" placeholder="Fault reported, accessories, serial…"></textarea>
+      <label style="display:flex;align-items:center;gap:9px;margin-top:14px;cursor:pointer">
+        <input type="checkbox" id="f_attest" style="width:auto">
+        <span>I checked a government ID and a proof of purchase in person</span>
+      </label>
       <div class="row">
-        <button class="act" onclick="intake()">Create job</button>
+        <button class="act" onclick="intake()">Open job</button>
         <span class="dim t" id="intakeMsg"></span>
       </div>
     </div>
@@ -302,12 +300,13 @@ async function bootstrapTools(){
 
 async function intake(){
   const body = {
-    client_name:$("f_name").value.trim(), id_type:$("f_idtype").value,
-    id_number:$("f_idnum").value.trim(), receipt:$("f_receipt").value.trim(),
-    receipt_date:$("f_rdate").value, imei:$("f_imei").value.trim(),
-    brand:$("f_brand").value, model:$("f_model").value.trim(),
-    id_copy:$("f_idcopy").value.trim(), receipt_photo:$("f_rcphoto").value.trim(),
-    notes:$("f_notes").value.trim()
+    brand:$("f_brand").value,
+    model:$("f_model").value.trim(),
+    serial:$("f_serial").value.trim(),
+    fault:$("f_fault").value.trim(),
+    note:$("f_note").value.trim(),
+    attestation: $("f_attest").checked
+      ? {id_checked:true, receipt_checked:true} : {}
   };
   try{
     const r = await api("/api/intake", {method:"POST", body:JSON.stringify(body)});
@@ -315,9 +314,8 @@ async function intake(){
     CURRENT_JOB = r.job.job_id;
     $("jobPill").textContent = r.job.job_id;
     $("jobPill").className = "pill live";
-    $("intakeMsg").innerHTML = `<span class="ok">job ${esc(r.job.job_id)} created</span>` +
-      (r.warnings?.length ? ` <span class="warn">(${esc(r.warnings.join("; "))})</span>` : "");
-    toast("job created: " + r.job.job_id);
+    $("intakeMsg").innerHTML = `<span class="ok">job ${esc(r.job.job_id)} open</span>`;
+    toast("job " + r.job.job_id + " open");
     loadJobs();
   }catch(e){ $("intakeMsg").innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
 }
@@ -389,8 +387,8 @@ async function runPlan(){
 
 async function loadLedger(){
   const j = await api("/api/jobs");
-  $("jobsBox").innerHTML = j.jobs.length ? `<table><tr><th>Job</th><th>Client</th><th>Model</th><th>IMEI</th><th>Status</th><th>Ops</th></tr>` +
-    j.jobs.map(x=>`<tr><td>${esc(x.job_id)}</td><td>${esc(x.client_name)}</td><td>${esc(x.model)}</td><td>${esc(x.imei)}</td><td>${esc(x.status)}</td><td>${x.operations}</td></tr>`).join("") +
+  $("jobsBox").innerHTML = j.jobs.length ? `<table><tr><th>Job</th><th>Model</th><th>Serial</th><th>Fault</th><th>Status</th><th>Ops</th></tr>` +
+    j.jobs.map(x=>`<tr><td>${esc(x.job_id)}</td><td>${esc(x.model)}</td><td>${esc(x.serial)}</td><td>${esc(x.fault)}</td><td>${esc(x.status)}</td><td>${x.operations}</td></tr>`).join("") +
     `</table>` : `<div class="dim">no jobs yet</div>`;
   const l = await api("/api/ledger");
   $("ledgerBox").innerHTML = l.ledger.length ? `<pre>${esc(l.ledger.slice(0,120).map(e=>`${e.ts}  ${e.kind.padEnd(9)}  ${e.job||""}  ${e.summary||e.client||""}`).join("\n"))}</pre>` : `<div class="dim">empty</div>`;
