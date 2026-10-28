@@ -505,6 +505,39 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
                                "guide", "safe"))
 
     elif intent == "flash":
+        from . import firmware
+        fw_ref = ctx.get("firmware_id") or ctx.get("firmware")
+        if fw_ref:
+            fw_res = firmware.get_firmware(str(fw_ref))
+            if fw_res.get("ok"):
+                fw_ver = firmware.verify_firmware(fw_res["firmware"]["id"])
+                if fw_ver.get("ok"):
+                    pkg = fw_ver["firmware"]
+                    steps.append(_step("fw-vault", f"Firmware Vault: {pkg['id']} ({pkg['model_hint']})",
+                                       f"Verified SHA-256: {pkg['sha256'][:12]}... Path: {pkg['path']}", "guide", "safe"))
+                else:
+                    steps.append(_step("fw-tampered", f"Firmware BLOCKED: {fw_ver.get('error')}",
+                                       "Execution BLOCKED: firmware file modified or tampered since registration.",
+                                       "guide", "destructive"))
+            else:
+                steps.append(_step("fw-unregistered", f"Firmware reference: {fw_ref}",
+                                   "Warning: specified firmware is not registered in Vault.", "guide", "caution"))
+        else:
+            fw_list = firmware.list_firmware()
+            if fw_list.get("ok") and fw_list.get("packages"):
+                for pkg in fw_list["packages"]:
+                    m_hint = (pkg.get("model_hint") or "").lower()
+                    if brand in m_hint or m_hint in brand:
+                        fw_ver = firmware.verify_firmware(pkg["id"])
+                        if fw_ver.get("ok"):
+                            steps.append(_step("fw-vault", f"Vault Firmware: {pkg['id']} ({pkg['model_hint']})",
+                                               f"Verified SHA-256: {pkg['sha256'][:12]}...", "guide", "safe"))
+                        else:
+                            steps.append(_step("fw-tampered", f"Firmware BLOCKED: {fw_ver.get('error')}",
+                                               "Execution BLOCKED: firmware file modified or tampered since registration.",
+                                               "guide", "destructive"))
+                        break
+
         fam = ctx.get("firmware")
         if brand == "samsung":
             if tools.get("odin", {}).get("found"):

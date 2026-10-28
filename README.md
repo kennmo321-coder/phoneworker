@@ -18,6 +18,7 @@ python -m phonebench --doctor   # toolchain + device state, then exit
 | **Bench** | Live device state — `adb` / `fastboot` / EDL / preloader — model, Android version, battery, serial. Toolchain status for 16 tools. `i` installs Google's official platform-tools. Resource directory for the open-source stack |
 | **Intake** | Device record: brand, model, serial, fault, note. Ownership is **attested, not stored** — you check the identity document and the proof of purchase in person; the app records only that you did, when, and by whom |
 | **Workflow** | 8 intents × 7 brands. Every step tagged `safe` / `caution` / `destructive`, with the rules that matter for that brand |
+| **Vault** | Local firmware library: packages with model, size, hash, and green/red model-match indicators against attached device |
 | **Ledger** | Every job and every operation, append-only, timestamped |
 | **Help** | Keys, gate rules, per-brand safety |
 
@@ -52,11 +53,30 @@ boolean plus a timestamp — enough to show due diligence, worthless to a thief.
 Runtime data lives in `%LOCALAPPDATA%\phonebench\` and holds device models,
 serials, faults and operation logs. Keep it that way.
 
+## Firmware Vault
+
+Local library of stock firmware packages. Firmware binaries are registered locally and stored under `%LOCALAPPDATA%\phonebench\firmware\`. Binaries are **never** committed to the repository.
+
+```
+pb firmware add <path> [--no-copy] [--model <model>]   # register firmware
+pb firmware list                                       # list vault packages
+pb firmware verify <id> [--full]                      # verify hash integrity
+pb firmware rm <id>                                   # remove package from vault
+```
+
+Features:
+- Streaming SHA-256 computation in 8 MB chunks (handles multi-GB packages without loading into RAM).
+- Automatic model and codename extraction from `android-info.txt` in zips, `AP_*.tar.md5` filenames, scatter files, and IPSW files.
+- `--no-copy` option to reference packages in place.
+- Fast verification via size and mtime checks, with full SHA-256 recalculation on demand or on file change.
+- Execution block: flashing steps verify package hash integrity and refuse to execute if a package was tampered with or modified.
+
 ## Layout
 
 ```
 phonebench/
   core.py      tool discovery · USB/adb/fastboot scan · brand model · planner
+  firmware.py  firmware vault · SHA-256 hashing · manifest management
   jobs.py      ownership gate · job records · ledger
   tui.py       terminal interface
   server.py    optional web interface (same rules)

@@ -133,7 +133,7 @@ def list_jobs() -> list[dict]:
 
 
 def gate(job_id: str, brand: str | None = None, model: str | None = None,
-         device: dict | None = None) -> dict:
+         device: dict | None = None, firmware_id: str | None = None) -> dict:
     """Single source of truth for whether a job may execute a write."""
     job = load(job_id)
     if not job:
@@ -167,6 +167,12 @@ def gate(job_id: str, brand: str | None = None, model: str | None = None,
         if live_serial and job.get("serial"):
             if live_serial.lower() != job["serial"].lower():
                 reasons.append(f"attached serial '{live_serial}' != job serial '{job['serial']}'")
+
+    if firmware_id:
+        from . import firmware
+        v = firmware.verify_firmware(firmware_id)
+        if not v.get("ok"):
+            reasons.append(f"firmware verification failed: {v.get('error')}")
 
     return {"ok": not reasons, "reasons": reasons, "job": job}
 

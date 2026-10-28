@@ -173,9 +173,9 @@ BRAND_ORDER = ["samsung", "google", "xiaomi", "apple", "mediatek", "qualcomm", "
 
 class App:
     def __init__(self):
-        self.screens = ["bench", "intake", "workflow", "ledger", "help"]
+        self.screens = ["bench", "intake", "workflow", "vault", "ledger", "help"]
         self.titles = {"bench": "Bench", "intake": "Intake", "workflow": "Workflow",
-                       "ledger": "Ledger", "help": "Help"}
+                       "vault": "Vault", "ledger": "Ledger", "help": "Help"}
         self.screen = 0
         self.msg = ""
         self.msg_style = "dim"
@@ -240,6 +240,8 @@ class App:
         elif self.screen == 2:
             self.draw_workflow(c, 0, body_y, w, body_h)
         elif self.screen == 3:
+            self.draw_vault(c, 0, body_y, w, body_h)
+        elif self.screen == 4:
             self.draw_ledger(c, 0, body_y, w, body_h)
         else:
             self.draw_help(c, 0, body_y, w, body_h)
@@ -426,6 +428,50 @@ class App:
                         break
                     c.put(x + 5, yy, line, "dim")
                     yy += 1
+
+    def draw_vault(self, c: Canvas, x: int, y: int, w: int, h: int):
+        from . import firmware
+        res = firmware.list_firmware()
+        pkgs = res.get("packages", []) if res.get("ok") else []
+        c.box(x, y, w, h, f"vault - firmware library ({len(pkgs)})")
+
+        dev_model = (self.device.get("props") or {}).get("ro.product.model", "")
+        dev_brand = self.device.get("brand_guess", "")
+        dev_state = self.device.get("state", "none")
+        has_device = dev_state != "none" and bool(dev_model or dev_brand)
+
+        if not pkgs:
+            c.put(x + 2, y + 1, "no packages in vault - use 'pb firmware add <path>' to register", "dim")
+            return
+
+        c.put(x + 2, y + 1, f"{'ID':<14}{'MODEL HINT':<18}{'SIZE':<12}{'HASH':<14}{'MATCH':<12}{'FILENAME'}", "dim")
+        for i, p in enumerate(pkgs[: h - 3]):
+            pkg_id = p.get("id", "")
+            model_hint = (p.get("model_hint") or "generic")[:16]
+            size_mb = f"{p.get('size', 0) / (1024 * 1024):.1f} MB"
+            hash_12 = p.get("sha256", "")[:12]
+            filename = (p.get("filename") or "")[: max(10, w - 72)]
+
+            if not has_device:
+                match_str = "no device"
+                match_st = "dim"
+            else:
+                target_model = (dev_model or dev_brand).lower()
+                m_hint = model_hint.lower()
+                if m_hint in target_model or target_model in m_hint:
+                    match_str = "✓ match"
+                    match_st = "ok"
+                else:
+                    match_str = "× mismatch"
+                    match_st = "bad"
+
+            yy = y + 2 + i
+            c.put(x + 2, yy, f"{pkg_id:<14}", "bold")
+            c.put(x + 16, yy, f"{model_hint:<18}", "")
+            c.put(x + 34, yy, f"{size_mb:<12}", "")
+            c.put(x + 46, yy, f"{hash_12:<14}", "dim")
+            c.put(x + 60, yy, f"{match_str:<12}", match_st)
+            c.put(x + 72, yy, filename, "dim")
 
     def draw_ledger(self, c: Canvas, x: int, y: int, w: int, h: int):
         top_h = max(6, h // 2)
