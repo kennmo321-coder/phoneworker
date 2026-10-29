@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 from phonebench import __main__ as main_module
-from phonebench import core, firmware, jobs, server
+from phonebench import core, firmware, jobs, server, tui
 
 
 class TestCLIAndEndToEnd(unittest.TestCase):
@@ -114,18 +114,59 @@ class TestCLIAndEndToEnd(unittest.TestCase):
         plan_res = core.plan("samsung", "flash", {
             "firmware_id": pkg_id,
             "model": "SM-G991B",
-            "tools": {},
+            "tools": {"adb": {"path": "/fake/adb"}},
         })
         self.assertTrue(plan_res.get("blocked"))
         self.assertIsNotNone(plan_res.get("block_reason"))
 
-        # 3. Verify execution path blocks running steps
-        executed_steps = []
-        if not gate_res["ok"] or plan_res.get("blocked"):
-            # Execution refused
-            executed_steps = []
+        # Monkeypatch server.run_step to record executed steps
+        executed_calls = []
+        def mock_run_step(step, timeout=180):
+            executed_calls.append(step)
+            return {"id": step["id"], "ok": True}
 
-        self.assertEqual(len(executed_steps), 0)
+        original_run_step = server.run_step
+        server.run_step = mock_run_step
+        try:
+            # 3. Test TAMPERED case with App.execute()
+            app = tui.App()
+            app.job = job_res["job"]
+            app.plan = plan_res
+            app.selected_firmware_id = pkg_id
+
+            app.execute()
+
+            self.assertEqual(len(executed_calls), 0)
+            self.assertTrue(app.msg.startswith("blocked"), f"Expected msg starting with 'blocked', got: {app.msg}")
+
+            # 4. Test POSITIVE UNTAMPERED case with App.execute()
+            valid_src = Path(self.tmp_dir) / "valid_stock_fw.bin"
+            valid_src.write_bytes(b"UNTAMPERED_STOCK_FIRMWARE_DATA")
+            reg_valid = firmware.add_firmware(valid_src, copy=True, model_hint="SM-G991B")
+            self.assertTrue(reg_valid["ok"])
+            valid_pkg_id = reg_valid["firmware"]["id"]
+
+            plan_valid = core.plan("google", "flash", {
+                "firmware_id": valid_pkg_id,
+                "model": "Pixel 6a",
+                "tools": {
+                    "adb": {"path": "/fake/adb", "found": True},
+                    "fastboot": {"path": "/fake/fastboot", "found": True},
+                },
+            })
+            self.assertFalse(plan_valid.get("blocked"))
+
+            app_valid = tui.App()
+            app_valid.job = job_res["job"]
+            app_valid.plan = plan_valid
+            app_valid.selected_firmware_id = valid_pkg_id
+
+            app_valid.execute()
+
+            self.assertGreater(len(executed_calls), 0)
+            self.assertTrue(app_valid.msg.startswith("executed"), f"Expected msg starting with 'executed', got: {app_valid.msg}")
+        finally:
+            server.run_step = original_run_step
 
 
 if __name__ == "__main__":

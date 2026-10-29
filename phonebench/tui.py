@@ -194,6 +194,7 @@ class App:
         self.intent_idx = 0
         self.intents = list(core.INTENTS.items())
         self.brand_idx = 0
+        self.vault_idx = 0
         self.selected_firmware_id = None
         self.plan = None
         self.jobs_cache = []
@@ -388,6 +389,18 @@ class App:
         c.box(bx, y, bw, 14, "brand")
         brand = BRAND_ORDER[self.brand_idx]
         c.put(bx + 2, y + 1, f"‹ {core.BRANDS[brand]['label']} ›", "bold")
+
+        if self.selected_firmware_id:
+            from . import firmware
+            fw_res = firmware.get_firmware(self.selected_firmware_id)
+            if fw_res.get("ok"):
+                fw_label = f"firmware: {fw_res['firmware']['id']} ({fw_res['firmware']['model_hint']})"
+            else:
+                fw_label = f"firmware: {self.selected_firmware_id}"
+            c.put(bx + bw - len(fw_label) - 2, y + 1, fw_label, "ok")
+        else:
+            c.put(bx + bw - 26, y + 1, "no firmware selected", "dim")
+
         c.put(bx + 2, y + 3, core.BRANDS[brand]["firmware_hint"][: bw - 4], "dim")
         yy = y + 5
         for rule in core.BRANDS[brand]["rules"][:5]:
@@ -434,7 +447,9 @@ class App:
         from . import firmware
         res = firmware.list_firmware()
         pkgs = res.get("packages", []) if res.get("ok") else []
-        c.box(x, y, w, h, f"vault - firmware library ({len(pkgs)})")
+
+        sel_info = f"selected: {self.selected_firmware_id}" if self.selected_firmware_id else "none selected"
+        c.box(x, y, w, h, f"vault - firmware library ({len(pkgs)}) [{sel_info}]")
 
         dev_model = (self.device.get("props") or {}).get("ro.product.model", "")
         dev_brand = self.device.get("brand_guess", "")
@@ -445,13 +460,21 @@ class App:
             c.put(x + 2, y + 1, "no packages in vault - use 'pb firmware add <path>' to register", "dim")
             return
 
-        c.put(x + 2, y + 1, f"{'ID':<14}{'MODEL HINT':<18}{'SIZE':<12}{'HASH':<14}{'MATCH':<12}{'FILENAME'}", "dim")
-        for i, p in enumerate(pkgs[: h - 3]):
+        if self.vault_idx >= len(pkgs):
+            self.vault_idx = max(0, len(pkgs) - 1)
+
+        c.put(x + 2, y + 1, "↑↓ move cursor  enter select package  d / esc clear selection", "dim")
+        c.put(x + 2, y + 2, f"{'':<3}{'ID':<14}{'MODEL HINT':<18}{'SIZE':<12}{'HASH':<14}{'MATCH':<12}{'FILENAME'}", "dim")
+
+        for i, p in enumerate(pkgs[: h - 4]):
             pkg_id = p.get("id", "")
             model_hint = (p.get("model_hint") or "generic")[:16]
             size_mb = f"{p.get('size', 0) / (1024 * 1024):.1f} MB"
             hash_12 = p.get("sha256", "")[:12]
-            filename = (p.get("filename") or "")[: max(10, w - 72)]
+            filename = (p.get("filename") or "")[: max(10, w - 75)]
+
+            is_cursor = i == self.vault_idx
+            is_selected = pkg_id == self.selected_firmware_id
 
             if not has_device:
                 match_str = "no device"
@@ -466,13 +489,21 @@ class App:
                     match_str = "× mismatch"
                     match_st = "bad"
 
-            yy = y + 2 + i
-            c.put(x + 2, yy, f"{pkg_id:<14}", "bold")
-            c.put(x + 16, yy, f"{model_hint:<18}", "")
-            c.put(x + 34, yy, f"{size_mb:<12}", "")
-            c.put(x + 46, yy, f"{hash_12:<14}", "dim")
-            c.put(x + 60, yy, f"{match_str:<12}", match_st)
-            c.put(x + 72, yy, filename, "dim")
+            prefix = "› " if is_cursor else "  "
+            mark = "*" if is_selected else " "
+            row_st = "inv" if is_cursor else ("bold" if is_selected else "")
+
+            yy = y + 3 + i
+            if is_cursor:
+                c.fill(x + 1, yy, w - 2, 1, "inv")
+
+            c.put(x + 2, yy, f"{prefix}{mark}", "accent" if is_selected and not is_cursor else row_st)
+            c.put(x + 5, yy, f"{pkg_id:<14}", row_st or "bold")
+            c.put(x + 19, yy, f"{model_hint:<18}", row_st)
+            c.put(x + 37, yy, f"{size_mb:<12}", row_st)
+            c.put(x + 49, yy, f"{hash_12:<14}", row_st or "dim")
+            c.put(x + 63, yy, f"{match_str:<12}", row_st or match_st)
+            c.put(x + 75, yy, filename, row_st or "dim")
 
     def draw_ledger(self, c: Canvas, x: int, y: int, w: int, h: int):
         top_h = max(6, h // 2)
@@ -706,6 +737,22 @@ class App:
                 self.action_run()
 
         elif self.screen == 3:
+            from . import firmware
+            pkgs = firmware.list_firmware().get("packages", [])
+            if key == "down" and pkgs:
+                self.vault_idx = (self.vault_idx + 1) % len(pkgs)
+            elif key == "up" and pkgs:
+                self.vault_idx = (self.vault_idx - 1) % len(pkgs)
+            elif key == "enter" and pkgs:
+                if 0 <= self.vault_idx < len(pkgs):
+                    selected = pkgs[self.vault_idx]
+                    self.selected_firmware_id = selected["id"]
+                    self.say(f"selected firmware {selected['id']} ({selected.get('model_hint')})", "ok")
+            elif key in ("d", "esc"):
+                self.selected_firmware_id = None
+                self.say("no firmware selected", "dim")
+
+        elif self.screen == 4:
             if key in ("r", "enter"):
                 self.load_ledger()
 

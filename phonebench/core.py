@@ -530,10 +530,12 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
         else:
             fw_list = firmware.list_firmware()
             target_model = (ctx.get("model") or "").strip().lower()
+            found_auto = False
             if fw_list.get("ok") and fw_list.get("packages") and target_model:
                 for pkg in fw_list["packages"]:
                     m_hint = (pkg.get("model_hint") or "").strip().lower()
                     if m_hint and (m_hint in target_model or target_model in m_hint):
+                        found_auto = True
                         fw_ver = firmware.verify_firmware(pkg["id"], full=True)
                         if fw_ver.get("ok"):
                             steps.append(_step("fw-vault", f"Vault Firmware: {pkg['id']} ({pkg['model_hint']})",
@@ -545,6 +547,9 @@ def plan(brand: str, intent: str, ctx: dict) -> dict:
                                                "Execution BLOCKED: firmware file modified or tampered since registration.",
                                                "guide", "destructive"))
                         break
+            if not found_auto:
+                steps.append(_step("fw-none", "No firmware selected",
+                                   "No firmware selected in Vault - integrity will not be checked.", "guide", "caution"))
 
         fam = ctx.get("firmware")
         if brand == "samsung":
