@@ -1,4 +1,8 @@
-# Brief for Jules — phoneworker roadmap
+# Brief for Jules - phoneworker roadmap
+
+> **SUPERSEDED - do not follow the priority order below.**
+> This document is kept for history. The authoritative roadmap, including the
+> flashing priority, Data Rescue and Safe Setup, is `docs/master-brief.md`.
 
 Copy everything below the line into Jules (jules.google) as the task prompt.
 One feature per PR. Do not batch them.
@@ -50,9 +54,11 @@ Python 3.10+. **Standard library only** — no pip packages. Runtime data lives 
    deliberate: MTK `Download Only`, Samsung `HOME_CSC` semantics, Qualcomm
    backup-before-write, FRP ordering. Do not simplify them into generic advice.
 
-## What to build — priority order
+## What to build - priority order
 
-### P0 — correctness and trust
+*Historical only. Use `docs/master-brief.md`.*
+
+### P0 - correctness and trust
 
 **F1. Firmware vault** (`phonebench/firmware.py`)
 Local library of firmware packages: register a file, compute SHA-256, parse

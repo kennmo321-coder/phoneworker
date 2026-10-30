@@ -109,6 +109,12 @@ Missing tools are reported, not faked. Pin a path manually in
 - MTK: `Download Only`, never `Format All + Download`.
 - Qualcomm: back up with `edl` before writing.
 
+## Roadmap
+
+The authoritative plan - priorities, hard rules, non-goals and the definition
+of done - is [`docs/master-brief.md`](docs/master-brief.md). `docs/jules-brief.md`
+is kept for history only.
+
 ## License
 
 MIT for the code in this repository.
