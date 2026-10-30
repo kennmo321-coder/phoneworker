@@ -78,6 +78,45 @@ def self_test() -> int:
             os.environ.pop("PHONEBENCH_FAKE_ROOT", None)
 
 
+def handle_dry_run(brand: str = "generic", intent: str = "diagnose", firmware_id: str | None = None) -> int:
+    import json
+    from . import server
+
+    reg_file = core.APP_DIR / "registry.json"
+    registry_data = json.loads(reg_file.read_text(encoding="utf-8")).get("tools", {}) if reg_file.exists() else {}
+    dev = core.scan(registry_data)
+
+    plan = core.plan(brand, intent, {
+        "tools": core.tool_report(registry_data),
+        "state": dev["state"],
+        "firmware_id": firmware_id,
+        "firmware": firmware_id,
+    })
+
+    print(f"DRY RUN PLAN: {plan['brand_label']} - {plan['intent_label']} [risk: {plan['risk']}]")
+    if plan.get("blocked"):
+        print(f"BLOCKED: {plan.get('block_reason')}", file=sys.stderr)
+
+    print("-" * 70)
+    cmds = server.plan_commands(plan, {"tools": registry_data})
+    for cmd in cmds:
+        num = cmd.get("n", 1)
+        title = cmd.get("title", "")
+        kind = cmd.get("kind", "guide")
+        risk = cmd.get("risk", "safe")
+
+        if kind in ("auto", "launch") and cmd.get("argv"):
+            argv_str = " ".join(cmd["argv"])
+            print(f"{num}. [{risk}] {title}\n   argv: {argv_str}")
+        else:
+            text = cmd.get("text") or "guide only - nothing to execute"
+            print(f"{num}. [{risk}] {title}\n   text: {text}")
+
+    print("-" * 70)
+    print("executed: 0")
+    return 0
+
+
 def handle_firmware_cli(args: argparse.Namespace) -> int:
     cmd = args.fw_command
     if cmd == "add":
@@ -138,6 +177,10 @@ def main(argv=None) -> int:
     p.add_argument("--doctor", action="store_true", help="print toolchain + device state and exit")
     p.add_argument("--preview", action="store_true", help="render all screens as text and exit")
     p.add_argument("--self-test", action="store_true", help="run test suite with fake devices and exit")
+    p.add_argument("--dry-run", action="store_true", help="render resolved plan and argv commands without executing")
+    p.add_argument("--brand", default="generic", help="brand for dry-run plan")
+    p.add_argument("--intent", default="diagnose", help="intent for dry-run plan")
+    p.add_argument("--firmware", help="firmware ID or path for dry-run plan")
 
     subparsers = p.add_subparsers(dest="subcommand")
 
@@ -160,6 +203,8 @@ def main(argv=None) -> int:
 
     args = p.parse_args(argv)
 
+    if args.dry_run:
+        return handle_dry_run(args.brand, args.intent, args.firmware)
     if args.self_test:
         return self_test()
     if args.subcommand == "firmware":

@@ -196,6 +196,7 @@ class App:
         self.brand_idx = 0
         self.vault_idx = 0
         self.selected_firmware_id = None
+        self.dry_run = False
         self.plan = None
         self.jobs_cache = []
         self.ledger_cache = []
@@ -418,8 +419,9 @@ class App:
             return
         title = "plan"
         if self.plan:
+            dry_tag = " [DRY RUN]" if self.dry_run else ""
             title = (f"plan - {self.plan['brand_label']} - {self.plan['intent_label']} "
-                     f"[{self.plan['risk']}]")
+                     f"[{self.plan['risk']}]{dry_tag}")
         c.box(x, py, w, ph, title)
         if not self.plan:
             c.put(x + 2, py + 1, "enter builds the plan · x executes (needs a job and RUN)", "dim")
@@ -432,15 +434,24 @@ class App:
         elif not gate:
             c.put(x + 20, py + 1, "no job selected - execution disabled", "warn")
         yy = py + 3
-        for i, s in enumerate(self.plan["steps"], 1):
+        from .server import plan_commands
+        cmds = plan_commands(self.plan, {"tools": self.registry})
+        for i, s in enumerate(cmds, 1):
             if yy >= py + ph - 1:
                 break
             st = {"safe": "ok", "caution": "warn", "destructive": "bad"}[s["risk"]]
             c.put(x + 2, yy, f"{i}. {s['title']}"[: w - 14], "")
             c.put(w - 12, yy, f"[{s['risk']}]", st)
             yy += 1
-            if s.get("detail") and yy < py + ph - 1:
-                for line in textwrap.wrap(s["detail"], w - 6)[:2]:
+
+            detail_text = ""
+            if s.get("kind") in ("auto", "launch") and s.get("argv"):
+                detail_text = "argv: " + " ".join(s["argv"])
+            else:
+                detail_text = s.get("text") or s.get("detail") or ""
+
+            if detail_text and yy < py + ph - 1:
+                for line in textwrap.wrap(detail_text, w - 6)[:2]:
                     if yy >= py + ph - 1:
                         break
                     c.put(x + 5, yy, line, "dim")
@@ -620,6 +631,9 @@ class App:
         if self.plan.get("blocked"):
             self.say(f"blocked: {self.plan.get('block_reason')}", "bad")
             return
+        if self.dry_run:
+            self.execute()
+            return
         if not self.current_job_id():
             self.say("select a job first", "bad")
             return
@@ -637,24 +651,25 @@ class App:
         if self.plan and self.plan.get("blocked"):
             self.say(f"blocked: {self.plan.get('block_reason')}", "bad")
             return
+        if self.dry_run:
+            self.say("dry run - nothing executed", "warn")
+            return
+        from .server import plan_commands, run_step
+        cmds = plan_commands(self.plan, {"tools": self.registry})
         results = []
-        for s in self.plan["steps"]:
-            if s["kind"] == "auto" and s["cmd"]:
-                from .server import run_step
+        for s in cmds:
+            if s["kind"] == "auto":
                 results.append(run_step(s))
-            elif s["kind"] == "launch" and s.get("tool"):
-                path = core.discover(s["tool"], self.registry)
-                if path:
-                    import subprocess
-                    try:
-                        subprocess.Popen([path], cwd=os.path.dirname(path))
-                        results.append({"id": s["id"], "ok": True, "launched": path})
-                    except OSError as exc:
-                        results.append({"id": s["id"], "ok": False, "err": str(exc)})
-                else:
-                    results.append({"id": s["id"], "ok": False, "err": f"not installed: {s['tool']}"})
+            elif s["kind"] == "launch" and s.get("argv"):
+                path = s["tool_path"]
+                import subprocess
+                try:
+                    subprocess.Popen(s["argv"], cwd=os.path.dirname(path))
+                    results.append({"id": s["id"], "ok": True, "launched": path})
+                except OSError as exc:
+                    results.append({"id": s["id"], "ok": False, "err": str(exc)})
             else:
-                results.append({"id": s["id"], "ok": True, "guide": s.get("detail", "")})
+                results.append({"id": s["id"], "ok": not s.get("missing"), "guide": s.get("text", "")})
         ok = sum(1 for r in results if r.get("ok"))
         jobs.record_operation(self.current_job_id(), self.plan["intent"],
                               f"{self.plan['intent_label']} on {self.plan['brand_label']}",
@@ -736,6 +751,9 @@ class App:
                 self.brand_idx = (self.brand_idx - 1) % len(BRAND_ORDER)
             elif key == "enter":
                 self.action_plan()
+            elif key == "d":
+                self.dry_run = not self.dry_run
+                self.say("dry-run active" if self.dry_run else "dry-run disabled", "warn" if self.dry_run else "dim")
             elif key == "x":
                 self.action_run()
 

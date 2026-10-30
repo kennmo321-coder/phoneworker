@@ -26,21 +26,87 @@ def registry() -> dict:
     return {"tools": {}}
 
 
+def plan_commands(plan: dict, reg: dict | None = None) -> list[dict]:
+    reg_tools = (reg or {}).get("tools") if reg else registry().get("tools")
+    steps = (plan or {}).get("steps", [])
+    out = []
+    for idx, s in enumerate(steps, 1):
+        kind = s.get("kind", "guide")
+        risk = s.get("risk", "safe")
+        step_id = s.get("id", "")
+        title = s.get("title", "")
+        detail = s.get("detail", "")
+
+        if kind == "auto" and s.get("cmd"):
+            cmd = list(s["cmd"])
+            if cmd:
+                tool_name = cmd[0]
+                resolved = core.discover(tool_name, reg_tools) or tool_name
+                cmd[0] = resolved
+                tool_path = resolved
+            else:
+                tool_path = None
+
+            out.append({
+                "n": idx,
+                "id": step_id,
+                "title": title,
+                "kind": "auto",
+                "argv": cmd,
+                "tool_path": tool_path,
+                "risk": risk,
+            })
+        elif kind == "launch" and s.get("tool"):
+            tool_name = s["tool"]
+            path = core.discover(tool_name, reg_tools)
+            if path:
+                out.append({
+                    "n": idx,
+                    "id": step_id,
+                    "title": title,
+                    "kind": "launch",
+                    "argv": [path],
+                    "tool_path": path,
+                    "risk": risk,
+                })
+            else:
+                out.append({
+                    "n": idx,
+                    "id": step_id,
+                    "title": title,
+                    "kind": "guide",
+                    "text": f"tool not installed: {tool_name}",
+                    "risk": risk,
+                    "missing": True,
+                })
+        else:
+            text_str = detail if detail else "guide only - nothing to execute"
+            out.append({
+                "n": idx,
+                "id": step_id,
+                "title": title,
+                "kind": "guide",
+                "text": text_str,
+                "risk": risk,
+            })
+    return out
+
+
 def run_step(step: dict, timeout: int = 180) -> dict:
-    cmd = step.get("cmd") or []
-    if not cmd:
-        return {"id": step["id"], "ok": True, "skipped": True}
+    argv = step.get("argv") or step.get("cmd") or []
+    if not argv:
+        return {"id": step.get("id", ""), "ok": True, "skipped": True}
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            encoding="utf-8", errors="replace")
-        return {"id": step["id"], "ok": r.returncode == 0, "code": r.returncode,
+        return {"id": step.get("id", ""), "ok": r.returncode == 0, "code": r.returncode,
                 "out": (r.stdout or "")[:20000], "err": (r.stderr or "")[:4000]}
     except FileNotFoundError:
-        return {"id": step["id"], "ok": False, "code": 127, "err": "not found", "out": ""}
+        return {"id": step.get("id", ""), "ok": False, "code": 127, "err": "not found", "out": ""}
     except subprocess.TimeoutExpired:
-        return {"id": step["id"], "ok": False, "code": 124, "err": f"timeout after {timeout}s", "out": ""}
+        return {"id": step.get("id", ""), "ok": False, "code": 124, "err": f"timeout after {timeout}s", "out": ""}
     except OSError as exc:
-        return {"id": step["id"], "ok": False, "code": 1, "err": str(exc), "out": ""}
+        return {"id": step.get("id", ""), "ok": False, "code": 1, "err": str(exc), "out": ""}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -184,23 +250,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             results = []
-            for step in p["steps"]:
+            cmds = plan_commands(p, reg)
+            for step in cmds:
                 if step["kind"] == "auto":
                     results.append(run_step(step))
-                elif step["kind"] == "launch":
-                    tool = step.get("tool")
-                    path = core.discover(tool, reg.get("tools")) if tool else None
-                    if path:
-                        try:
-                            subprocess.Popen([path], cwd=str(Path(path).parent))
-                            results.append({"id": step["id"], "ok": True, "launched": path})
-                        except OSError as exc:
-                            results.append({"id": step["id"], "ok": False, "err": str(exc)})
-                    else:
-                        results.append({"id": step["id"], "ok": False,
-                                        "err": f"tool not installed: {tool}"})
+                elif step["kind"] == "launch" and step.get("argv"):
+                    path = step["tool_path"]
+                    try:
+                        subprocess.Popen(step["argv"], cwd=str(Path(path).parent))
+                        results.append({"id": step["id"], "ok": True, "launched": path})
+                    except OSError as exc:
+                        results.append({"id": step["id"], "ok": False, "err": str(exc)})
                 else:
-                    results.append({"id": step["id"], "ok": True, "guide": step["detail"]})
+                    results.append({"id": step["id"], "ok": not step.get("missing"),
+                                    "guide": step.get("text", "")})
 
             jobs.record_operation(job_id, intent,
                                   f"{p['intent_label']} on {p['brand_label']}",
