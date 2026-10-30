@@ -10,6 +10,7 @@ python -m phonebench            # terminal app
 python -m phonebench --web      # same thing in a browser at 127.0.0.1:8765
 python -m phonebench --doctor   # toolchain + device state, then exit
 python -m phonebench --self-test # run test suite with fake device harness
+python -m phonebench --dry-run   # render plan and resolved argv without executing
 ```
 
 ## Screens
@@ -30,8 +31,9 @@ Intents: `diagnose` · `backup` · `flash` · `restore` · `frp` · `wipe` · `b
 ```
 ↑ ↓       move            ← →    change brand
 tab       next screen     enter  next field / build plan
-x         execute         r      rescan
-i         install platform-tools  q  quit
+x         execute         d      toggle dry-run mode
+r         rescan          i      install platform-tools
+q         quit
 ```
 
 ## The gate
@@ -99,6 +101,24 @@ Missing tools are reported, not faked. Pin a path manually in
 ```json
 { "tools": { "odin": "C:\\Odin3\\Odin3.exe" } }
 ```
+
+## Dry-run mode
+
+Render the exact commands a plan would run, without running anything:
+
+```
+python -m phonebench --dry-run --brand google --intent flash
+```
+
+Every step prints either its resolved `argv` (absolute tool path included) or,
+for a step that is guidance only, its text. The output always ends with
+`executed: 0`. Nothing is written to the device and nothing is appended to the
+ledger. Vault verification still runs, so a tampered package shows up as
+`BLOCKED` during the dry run.
+
+In the TUI, press `d` on the Workflow screen. The plan header shows `[DRY RUN]`,
+each step renders its argv, and `x` reports `dry run - nothing executed`
+without asking for `RUN`.
 
 ## Testing & Simulation
 
