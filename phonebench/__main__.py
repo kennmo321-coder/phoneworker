@@ -4,12 +4,15 @@
   python -m phonebench --web        local web UI on 127.0.0.1:8765
   python -m phonebench --doctor     toolchain + device state, then exit
   python -m phonebench --preview    render every screen as plain text (testing)
+  python -m phonebench --self-test  run test suite with fake devices
   python -m phonebench firmware     firmware vault management (add/list/verify/rm)
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from pathlib import Path
 
 from . import core, firmware, jobs
 
@@ -31,6 +34,48 @@ def doctor() -> int:
     print(f"\njobs    : {len(jobs.list_jobs())}")
     print(f"ledger  : {core.APP_DIR / 'ledger.jsonl'}")
     return 0
+
+
+def self_test() -> int:
+    import unittest
+
+    repo_root = Path(__file__).resolve().parent.parent
+    tests_dir = repo_root / "tests"
+    fakes_dir = tests_dir / "fakes"
+
+    old_test_mode = os.environ.get("PHONEBENCH_TEST_MODE")
+    old_fake_root = os.environ.get("PHONEBENCH_FAKE_ROOT")
+
+    os.environ["PHONEBENCH_TEST_MODE"] = "1"
+    os.environ["PHONEBENCH_FAKE_ROOT"] = str(fakes_dir.resolve())
+
+    try:
+        loader = unittest.TestLoader()
+        suite = loader.discover(str(tests_dir))
+        runner = unittest.TextTestRunner(verbosity=1)
+        result = runner.run(suite)
+
+        runs = result.testsRun
+        failures = len(result.failures)
+        errors = len(result.errors)
+        passed = runs - failures - errors
+
+        if result.wasSuccessful():
+            print(f"\nself-test complete: {runs} tests run, {passed} passed (0 failures, 0 errors)")
+            return 0
+        else:
+            print(f"\nself-test failed: {runs} tests run, {passed} passed ({failures} failures, {errors} errors)", file=sys.stderr)
+            return 1
+    finally:
+        if old_test_mode is not None:
+            os.environ["PHONEBENCH_TEST_MODE"] = old_test_mode
+        else:
+            os.environ.pop("PHONEBENCH_TEST_MODE", None)
+
+        if old_fake_root is not None:
+            os.environ["PHONEBENCH_FAKE_ROOT"] = old_fake_root
+        else:
+            os.environ.pop("PHONEBENCH_FAKE_ROOT", None)
 
 
 def handle_firmware_cli(args: argparse.Namespace) -> int:
@@ -92,6 +137,7 @@ def main(argv=None) -> int:
     p.add_argument("--no-open", action="store_true", help="(web) do not open a browser")
     p.add_argument("--doctor", action="store_true", help="print toolchain + device state and exit")
     p.add_argument("--preview", action="store_true", help="render all screens as text and exit")
+    p.add_argument("--self-test", action="store_true", help="run test suite with fake devices and exit")
 
     subparsers = p.add_subparsers(dest="subcommand")
 
@@ -114,6 +160,8 @@ def main(argv=None) -> int:
 
     args = p.parse_args(argv)
 
+    if args.self_test:
+        return self_test()
     if args.subcommand == "firmware":
         return handle_firmware_cli(args)
     if args.doctor:
