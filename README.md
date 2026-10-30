@@ -9,6 +9,7 @@ Terminal first. No dependencies, no cloud, no telemetry. Python 3.10+.
 python -m phonebench            # terminal app
 python -m phonebench --web      # same thing in a browser at 127.0.0.1:8765
 python -m phonebench --doctor   # toolchain + device state, then exit
+python -m phonebench --self-test # run test suite with fake device harness
 ```
 
 ## Screens
@@ -98,6 +99,16 @@ Missing tools are reported, not faked. Pin a path manually in
 ```json
 { "tools": { "odin": "C:\\Odin3\\Odin3.exe" } }
 ```
+
+## Testing & Simulation
+
+Run offline unit tests and safety model verifications:
+
+```
+python -m phonebench --self-test
+```
+
+When test mode is active (`PHONEBENCH_TEST_MODE=1` + `PHONEBENCH_FAKE_ROOT`), fake `adb` and `fastboot` drivers emulate connected hardware without requiring vendor tools or physical devices. The bench header displays `[SIMULATED DEVICES]` to visually indicate fake device mode.
 
 ## Safety model
 

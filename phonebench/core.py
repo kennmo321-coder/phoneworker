@@ -255,12 +255,26 @@ def _walk_index() -> dict[str, str]:
         return idx
 
 
+def simulation_active() -> bool:
+    """Check if fake device simulation test mode is active."""
+    return os.environ.get("PHONEBENCH_TEST_MODE") == "1" and "PHONEBENCH_FAKE_ROOT" in os.environ
+
+
 def discover(tool: str, registry: dict | None = None) -> str | None:
     """Resolve a tool path. Registry (manual pins) wins, then PATH, then index."""
     if registry and registry.get(tool):
         p = Path(registry[tool])
         if p.exists():
             return str(p)
+    if simulation_active():
+        fake_dir = Path(os.environ["PHONEBENCH_FAKE_ROOT"])
+        if os.name == "nt":
+            cand = fake_dir / f"{tool}.cmd"
+            if cand.exists():
+                return str(cand)
+        cand = fake_dir / tool
+        if cand.exists():
+            return str(cand)
     if tool in _mem_cache:
         return _mem_cache[tool]
     hit = shutil.which(tool) or shutil.which(tool + ".exe")

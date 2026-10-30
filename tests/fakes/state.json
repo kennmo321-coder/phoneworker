@@ -1,0 +1,15 @@
+{
+  "state": "adb",
+  "serial": "fake_serial_123",
+  "device_state": "device",
+  "props": {
+    "ro.product.manufacturer": "Google",
+    "ro.product.model": "Pixel 6a",
+    "ro.product.device": "bluejay",
+    "ro.build.version.release": "13",
+    "ro.build.version.sdk": "33",
+    "ro.serialno": "fake_serial_123",
+    "ro.build.fingerprint": "google/bluejay/bluejay:13/TP1A.220905.004/8927612:user/release-keys",
+    "battery": "85"
+  }
+}

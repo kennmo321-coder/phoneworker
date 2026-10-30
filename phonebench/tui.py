@@ -263,10 +263,13 @@ class App:
         c.put(1, 0, " phonebench ", "title")
         dot = "●" if state != "none" else "○"
         c.put(15, 0, f"{dot} {state}", "ok" if state != "none" else "bad")
+        sim_tag = " [SIMULATED DEVICES]" if core.simulation_active() else ""
         if model:
-            c.put(15 + len(state) + 4, 0, f"{model}", "bold")
+            c.put(15 + len(state) + 4, 0, f"{model}{sim_tag}", "warn" if sim_tag else "bold")
         elif brand:
-            c.put(15 + len(state) + 4, 0, f"{brand}", "bold")
+            c.put(15 + len(state) + 4, 0, f"{brand}{sim_tag}", "warn" if sim_tag else "bold")
+        elif sim_tag:
+            c.put(15 + len(state) + 4, 0, f"{sim_tag.strip()}", "warn")
         c.put(w - 26, 0, f"{found} tools  {self.current_job_id() or 'no job'}"[:25], "dim")
 
         tabs = []
